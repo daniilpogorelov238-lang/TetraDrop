@@ -32,8 +32,43 @@
       border-radius: 16px;
       box-shadow: inset 0 0 25px rgba(0,0,0,0.9);
       image-rendering: pixelated;
+      background: #0a0814;
     }
-    .sidebar { display: flex; flex-direction: column; gap: 18px; min-width: 170px; }
+    .sidebar { 
+      display: flex; 
+      flex-direction: column; 
+      gap: 18px; 
+      min-width: 170px; 
+    }
+
+    .panel {
+      background: #1c1833;
+      padding: 15px;
+      border-radius: 20px;
+      text-align: center;
+    }
+
+    .stats div {
+      display: flex;
+      justify-content: space-between;
+      margin: 8px 0;
+      font-size: 1.1rem;
+    }
+    .value { font-weight: bold; color: #a0f0ff; }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin: 8px 0;
+      background: #2a2452;
+      color: white;
+      border: none;
+      border-radius: 16px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:active { background: #4a3f8a; transform: scale(0.97); }
 
     /* Мобильные кнопки */
     .mobile-controls {
@@ -51,20 +86,18 @@
       border: none;
       padding: 18px 10px;
       border-radius: 16px;
-      font-size: 1.1rem;
+      font-size: 1.2rem;
       font-weight: bold;
-      cursor: pointer;
-      touch-action: manipulation;
     }
     .mobile-controls button:active {
       background: #4a3f8a;
       transform: scale(0.95);
     }
-    .mobile-controls .wide { grid-column: span 2; }
+    .wide { grid-column: span 2; }
 
     @media (max-width: 768px) {
       .game-wrapper { flex-direction: column; align-items: center; }
-      .sidebar { min-width: auto; width: 100%; max-width: 340px; }
+      .sidebar { min-width: auto; width: 100%; max-width: 360px; }
       .mobile-controls { display: grid; }
     }
   </style>
@@ -82,7 +115,7 @@
     </div>
 
     <div class="panel">
-      <div>Удержание (C / Кнопка)</div>
+      <div>Удержание</div>
       <canvas id="hold" width="120" height="120"></canvas>
     </div>
 
@@ -111,10 +144,34 @@
 </div>
 
 <script>
-// ==================== AUDIO (оставлен без изменений) ====================
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+// ==================== НАСТРОЙКИ ====================
+const COLS = 10, ROWS = 20, CELL = 30;
+const COLORS = ['#111', '#00f0f0', '#f0f000', '#a000f0', '#00f000', '#f00000', '#0000f0', '#f0a000'];
+const SHAPES = [
+  null,
+  [[0,0],[1,0],[2,0],[3,0]],     // I
+  [[0,0],[0,1],[1,0],[1,1]],     // O
+  [[0,0],[1,0],[2,0],[1,1]],     // T
+  [[0,0],[1,0],[1,1],[2,1]],     // S
+  [[1,0],[2,0],[0,1],[1,1]],     // Z
+  [[0,0],[0,1],[1,1],[2,1]],     // J
+  [[2,0],[0,1],[1,1],[2,1]]      // L
+];
+
+// ==================== ПЕРЕМЕННЫЕ ====================
+let board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+let current, nextPiece, holdPiece = null, canHold = true;
+let score = 0, linesCleared = 0, level = 1;
+let gameActive = false, paused = false, gameOverFlag = false;
+let lastDrop = 0, dropInterval = 800;
+let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let soundEnabled = true;
 
+const ctx = document.getElementById('board').getContext('2d');
+const nextCtx = document.getElementById('next').getContext('2d');
+const holdCtx = document.getElementById('hold').getContext('2d');
+
+// ==================== ЗВУКИ ====================
 function playSound(freq, duration, type = 'sine', volume = 0.3) {
   if (!soundEnabled) return;
   const osc = audioCtx.createOscillator();
@@ -127,97 +184,296 @@ function playSound(freq, duration, type = 'sine', volume = 0.3) {
   osc.stop(audioCtx.currentTime + duration);
 }
 
-function playMoveSound() { playSound(800, 0.02, 'square', 0.15); }
-function playRotateSound() { playSound(1250, 0.08, 'sine', 0.25); }
-function playDropSound() { playSound(400, 0.05, 'sawtooth', 0.2); }
-function playHardDropSound() { playSound(180, 0.18, 'sawtooth', 0.45); }
-function playLineClear(lines) {
-  for (let i = 0; i < lines; i++) {
-    setTimeout(() => playSound(700 + i*200, 0.15, 'triangle', 0.4), i*50);
+const sounds = {
+  move: () => playSound(800, 0.02, 'square', 0.15),
+  rotate: () => playSound(1250, 0.08, 'sine', 0.25),
+  drop: () => playSound(400, 0.05, 'sawtooth', 0.2),
+  hardDrop: () => playSound(180, 0.18, 'sawtooth', 0.45),
+  hold: () => { playSound(900, 0.05); setTimeout(() => playSound(1400, 0.1), 30); },
+  lineClear: (count) => {
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => playSound(600 + i*180, 0.12, 'triangle', 0.4), i*60);
+    }
+  }
+};
+
+// ==================== ОСНОВНЫЕ ФУНКЦИИ ====================
+function drawBoard() {
+  ctx.fillStyle = '#0a0814';
+  ctx.fillRect(0, 0, COLS*CELL, ROWS*CELL);
+
+  // Отрисовка зафиксированных блоков
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      if (board[y][x]) {
+        ctx.fillStyle = COLORS[board[y][x]];
+        ctx.fillRect(x*CELL+1, y*CELL+1, CELL-2, CELL-2);
+      }
+    }
+  }
+
+  // Отрисовка текущей фигуры
+  if (current) {
+    ctx.fillStyle = COLORS[current.type];
+    current.shape.forEach(([dx, dy]) => {
+      const x = current.x + dx;
+      const y = current.y + dy;
+      if (y >= 0) {
+        ctx.fillRect(x*CELL+1, y*CELL+1, CELL-2, CELL-2);
+      }
+    });
   }
 }
-function playHoldSound() { playSound(900, 0.05); setTimeout(() => playSound(1400, 0.1), 30); }
-function playGameOverSound() { /* ... */ }
 
-// ==================== ИГРА ====================
-const COLS = 10, ROWS = 20, CELL = 30;
-const COLORS = ['#111','#00f0f0','#f0f000','#a000f0','#00f000','#f00000','#0000f0','#f0a000'];
-const SHAPES = [null, [[0,0],[1,0],[2,0],[3,0]], [[0,0],[0,1],[1,0],[1,1]], [[0,0],[1,0],[2,0],[1,1]],
-  [[0,0],[1,0],[1,1],[2,1]], [[1,0],[2,0],[0,1],[1,1]], [[0,0],[0,1],[1,1],[2,1]], [[2,0],[0,1],[1,1],[2,1]]];
+function drawPreview(canvasCtx, piece, isHold = false) {
+  canvasCtx.fillStyle = '#1a1433';
+  canvasCtx.fillRect(0, 0, 120, 120);
 
-let board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
-let current, nextPiece, holdPiece = null, canHold = true;
-let score = 0, linesCleared = 0, level = 1;
-let gameActive = false, paused = false, gameOver = false;
-let lastDrop = 0;
+  if (!piece) return;
 
-const ctx = document.getElementById('board').getContext('2d');
-const nextCtx = document.getElementById('next').getContext('2d');
-const holdCtx = document.getElementById('hold').getContext('2d');
+  const offsetX = piece.type === 1 ? 0 : 15; // центрирование
+  const offsetY = 20;
 
-// ==================== Функции игры (drawBoard, isValid, spawnPiece и т.д.) ====================
-// (Я оставил их кратко, чтобы не раздувать сообщение — они такие же, как в предыдущей версии)
-
-function drawBoard() { /* тот же код */ 
-  ctx.fillStyle = '#0a0814'; ctx.fillRect(0,0,300,600);
-  // ... (полный код drawBoard из предыдущей версии)
+  canvasCtx.fillStyle = COLORS[piece.type];
+  piece.shape.forEach(([dx, dy]) => {
+    canvasCtx.fillRect(offsetX + dx*25 + 5, offsetY + dy*25 + 5, 23, 23);
+  });
 }
 
-function drawPreview(cvs, c, piece) { /* ... */ }
+function randomPiece() {
+  const type = Math.floor(Math.random() * 7) + 1;
+  return {
+    type: type,
+    shape: SHAPES[type],
+    x: type === 1 ? 3 : 4,   // I-фигура чуть левее
+    y: 0
+  };
+}
 
-// Полный код логики (randomPiece, isValid, lockPiece, clearLines и т.д.) можно взять из предыдущего сообщения.
+function isValid(piece, offsetX = 0, offsetY = 0) {
+  for (let [dx, dy] of piece.shape) {
+    const x = piece.x + dx + offsetX;
+    const y = piece.y + dy + offsetY;
+    if (x < 0 || x >= COLS || y >= ROWS) return false;
+    if (y >= 0 && board[y][x]) return false;
+  }
+  return true;
+}
 
-function spawnPiece() { /* ... */ }
-function hardDrop() { /* ... */ }
-function rotate() { /* ... */ }
-function hold() { /* ... */ }
+function rotatePiece() {
+  const original = current.shape;
+  const rotated = original[0].map((_, i) =>
+    original.map(row => row[i]).reverse()
+  );
+
+  current.shape = rotated;
+
+  if (!isValid(current)) {
+    current.shape = original; // откат
+    return false;
+  }
+  return true;
+}
+
+function lockPiece() {
+  current.shape.forEach(([dx, dy]) => {
+    const x = current.x + dx;
+    const y = current.y + dy;
+    if (y >= 0) board[y][x] = current.type;
+  });
+
+  const cleared = clearLines();
+  if (cleared > 0) {
+    sounds.lineClear(cleared);
+    updateScore(cleared);
+  }
+
+  current = nextPiece;
+  nextPiece = randomPiece();
+  canHold = true;
+
+  drawPreview(nextCtx, nextPiece);
+
+  if (!isValid(current)) {
+    gameOver();
+  }
+}
+
+function clearLines() {
+  let lines = 0;
+  for (let y = ROWS - 1; y >= 0; y--) {
+    if (board[y].every(cell => cell !== 0)) {
+      board.splice(y, 1);
+      board.unshift(Array(COLS).fill(0));
+      lines++;
+      y++; // проверить эту же строку снова
+    }
+  }
+  return lines;
+}
+
+function updateScore(lines) {
+  const points = [0, 100, 300, 500, 800];
+  score += points[lines] * level;
+  linesCleared += lines;
+  level = Math.floor(linesCleared / 10) + 1;
+  dropInterval = Math.max(100, 800 - (level-1)*70);
+
+  document.getElementById('score').textContent = score;
+  document.getElementById('level').textContent = level;
+  document.getElementById('lines').textContent = linesCleared;
+}
+
+function hardDrop() {
+  while (isValid(current, 0, 1)) {
+    current.y++;
+  }
+  sounds.hardDrop();
+  lockPiece();
+  drawBoard();
+}
+
+function hold() {
+  if (!canHold) return;
+  sounds.hold();
+
+  if (!holdPiece) {
+    holdPiece = { type: current.type, shape: SHAPES[current.type] };
+    current = nextPiece;
+    nextPiece = randomPiece();
+  } else {
+    [current.type, holdPiece.type] = [holdPiece.type, current.type];
+    current.shape = SHAPES[current.type];
+    current.x = current.type === 1 ? 3 : 4;
+    current.y = 0;
+  }
+
+  canHold = false;
+  drawPreview(holdCtx, holdPiece, true);
+  drawBoard();
+}
+
+function gameOver() {
+  gameActive = false;
+  gameOverFlag = true;
+  alert(`Игра окончена! Ваш счёт: ${score}`);
+}
+
+// ==================== ИГРОВОЙ ЦИКЛ ====================
+function gameLoop() {
+  if (!gameActive || paused || gameOverFlag) return;
+
+  const now = Date.now();
+  if (now - lastDrop > dropInterval) {
+    if (isValid(current, 0, 1)) {
+      current.y++;
+    } else {
+      lockPiece();
+    }
+    lastDrop = now;
+    drawBoard();
+  }
+  requestAnimationFrame(gameLoop);
+}
 
 // ==================== УПРАВЛЕНИЕ ====================
-document.addEventListener('keydown', e => { /* клавиатура — без изменений */ });
+document.addEventListener('keydown', e => {
+  if (!current || !gameActive || paused) return;
 
-// Мобильные кнопки
-document.getElementById('btnLeft').onclick = () => { if(current && isValid(current, current.x-1)) { current.x--; playMoveSound(); drawBoard(); }};
-document.getElementById('btnRight').onclick = () => { if(current && isValid(current, current.x+1)) { current.x++; playMoveSound(); drawBoard(); }};
-document.getElementById('btnDown').onclick = () => { if(current && isValid(current, current.x, current.y+1)) { current.y++; playDropSound(); drawBoard(); }};
-document.getElementById('btnRotate').onclick = () => rotate();
-document.getElementById('btnDrop').onclick = () => hardDrop();
-document.getElementById('btnHold').onclick = () => hold();
+  switch(e.key) {
+    case 'ArrowLeft':
+    case 'a':
+      if (isValid(current, -1)) { current.x--; sounds.move(); }
+      break;
+    case 'ArrowRight':
+    case 'd':
+      if (isValid(current, 1)) { current.x++; sounds.move(); }
+      break;
+    case 'ArrowDown':
+    case 's':
+      if (isValid(current, 0, 1)) { current.y++; sounds.drop(); }
+      break;
+    case ' ':
+      hardDrop();
+      return;
+    case 'ArrowUp':
+    case 'w':
+    case 'r':
+      if (rotatePiece()) sounds.rotate();
+      break;
+    case 'c':
+    case 'C':
+      hold();
+      break;
+  }
+  drawBoard();
+});
 
-// Swipe gestures
+// Мобильное управление
+document.getElementById('btnLeft').onclick = () => { if(isValid(current,-1)){current.x--;sounds.move();drawBoard();}};
+document.getElementById('btnRight').onclick = () => { if(isValid(current,1)){current.x++;sounds.move();drawBoard();}};
+document.getElementById('btnDown').onclick = () => { if(isValid(current,0,1)){current.y++;sounds.drop();drawBoard();}};
+document.getElementById('btnRotate').onclick = () => { if(rotatePiece()) sounds.rotate(); drawBoard(); };
+document.getElementById('btnDrop').onclick = hardDrop;
+document.getElementById('btnHold').onclick = hold;
+
+// Свайпы
 let touchStartX = 0, touchStartY = 0;
-const boardCanvas = document.getElementById('board');
-
-boardCanvas.addEventListener('touchstart', e => {
+document.getElementById('board').addEventListener('touchstart', e => {
   touchStartX = e.changedTouches[0].screenX;
   touchStartY = e.changedTouches[0].screenY;
 });
 
-boardCanvas.addEventListener('touchend', e => {
+document.getElementById('board').addEventListener('touchend', e => {
   if (!current || !gameActive || paused) return;
-  const touchEndX = e.changedTouches[0].screenX;
-  const touchEndY = e.changedTouches[0].screenY;
-  const diffX = touchEndX - touchStartX;
-  const diffY = touchEndY - touchStartY;
+  const dx = e.changedTouches[0].screenX - touchStartX;
+  const dy = e.changedTouches[0].screenY - touchStartY;
 
-  if (Math.abs(diffX) > 50 || Math.abs(diffY) > 50) {
-    if (Math.abs(diffX) > Math.abs(diffY)) {
-      // Горизонтальный свайп
-      if (diffX > 0) { current.x++; if(!isValid(current)) current.x--; else playMoveSound(); }
-      else { current.x--; if(!isValid(current)) current.x++; else playMoveSound(); }
-    } else {
-      // Вертикальный свайп вниз = hard drop
-      if (diffY > 80) hardDrop();
-      else if (diffY < -50) rotate();
-    }
-    drawBoard();
+  if (Math.abs(dx) > 40) {
+    if (dx > 0 && isValid(current, 1)) current.x++;
+    else if (dx < 0 && isValid(current, -1)) current.x--;
+    sounds.move();
+  } else if (dy > 60) {
+    hardDrop();
+  } else if (dy < -50) {
+    if (rotatePiece()) sounds.rotate();
   }
+  drawBoard();
 });
 
-// Запуск игры
-document.getElementById('startBtn').onclick = () => { /* ... */ };
-document.getElementById('pauseBtn').onclick = () => { if(gameActive) paused = !paused; };
-document.getElementById('soundBtn').onclick = () => { /* ... */ };
+// ==================== КНОПКИ ====================
+document.getElementById('startBtn').onclick = () => {
+  board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+  score = 0; linesCleared = 0; level = 1; dropInterval = 800;
+  holdPiece = null; canHold = true;
 
+  document.getElementById('score').textContent = 0;
+  document.getElementById('level').textContent = 1;
+  document.getElementById('lines').textContent = 0;
+
+  nextPiece = randomPiece();
+  current = randomPiece();
+  drawPreview(nextCtx, nextPiece);
+  drawPreview(holdCtx, null);
+
+  gameActive = true;
+  paused = false;
+  gameOverFlag = false;
+  lastDrop = Date.now();
+  drawBoard();
+  gameLoop();
+};
+
+document.getElementById('pauseBtn').onclick = () => {
+  if (gameActive) paused = !paused;
+};
+
+document.getElementById('soundBtn').onclick = () => {
+  soundEnabled = !soundEnabled;
+  this.textContent = soundEnabled ? '🔊 Звук: Вкл' : '🔇 Звук: Выкл';
+};
+
+// Автозапуск
 window.onload = () => document.getElementById('startBtn').click();
 </script>
 </body>
