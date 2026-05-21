@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>TetraDrop</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        height: 100vh;
+        background: #0a0a1f;
+        font-family: 'Courier New', monospace;
+        color: #0ff;
+        overflow: hidden;
+        touch-action: none;
+    }
+    .container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        height: 100%;
+    }
+    h1 {
+        margin: 8px 0 5px 0;
+        text-shadow: 0 0 10px #0ff;
+    }
+    #game {
+        border: 4px solid #0ff;
+        box-shadow: 0 0 30px #0ff;
+        image-rendering: pixelated;
+        touch-action: none;
+    }
+    .info {
+        display: flex;
+        justify-content: space-around;
+        width: 320px;
+        margin: 8px 0;
+        font-size: 18px;
+    }
+    .controls-info {
+        font-size: 13px;
+        opacity: 0.7;
+        margin-top: 5px;
+    }
+
+    /* === Кнопки управления для телефона === */
+    .touch-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 8px;
+        width: 320px;
+        margin-top: 10px;
+    }
+    button {
+        background: rgba(0, 255, 255, 0.15);
+        color: #0ff;
+        border: 2px solid #0ff;
+        font-size: 18px;
+        padding: 15px;
+        border-radius: 8px;
+        touch-action: none;
+        user-select: none;
+    }
+    button:active {
+        background: rgba(0, 255, 255, 0.4);
+        transform: scale(0.95);
+    }
+    .rotate-btn { grid-column: 3; grid-row: 1 / span 2; font-size: 22px; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>TETRADROP</h1>
+    <canvas id="game" width="320" height="640"></canvas>
+    
+    <div class="info">
+        <div>Счёт: <span id="score">0</span></div>
+        <div>Уровень: <span id="level">1</span></div>
+        <div>Линии: <span id="lines">0</span></div>
+    </div>
+
+    <!-- Кнопки для телефона -->
+    <div class="touch-controls">
+        <button id="left">←</button>
+        <button id="down">↓</button>
+        <button id="right">→</button>
+        <button id="rotate" class="rotate-btn">⟳</button>
+        <button id="harddrop" style="grid-column: 1 / span 2;">DROP</button>
+    </div>
+
+    <div class="controls-info">
+        На ПК: ←→↓↑ / X — поворот, Пробел — сброс
+    </div>
+</div>
+
+<script>
+// ==================== TETRADROP (Мобильная + ПК) ====================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const levelEl = document.getElementById('level');
+const linesEl = document.getElementById('lines');
+
+const BLOCK_SIZE = 32;
+const COLS = 10;
+const ROWS = 20;
+
+let board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+let score = 0, linesCleared = 0, level = 1;
+let dropInterval = 800;
+let lastDrop = Date.now();
+let gameOver = false;
+let paused = false;
+
+const tetrominoes = [
+    { shape: [[1,1,1,1]], color: '#0ff' },      // I
+    { shape: [[1,1],[1,1]], color: '#ff0' },    // O
+    { shape: [[0,1,0],[1,1,1]], color: '#a0f' },// T
+    { shape: [[1,0,0],[1,1,1]], color: '#0a0' },// L
+    { shape: [[0,0,1],[1,1,1]], color: '#f80' },// J
+    { shape: [[0,1,1],[1,1,0]], color: '#0ff' },// S
+    { shape: [[1,1,0],[0,1,1]], color: '#f0f' } // Z
+];
+
+let currentPiece = null;
+let currentX = 0, currentY = 0, currentRotation = 0;
+
+// Создание новой фигуры
+function newPiece() {
+    const type = Math.floor(Math.random() * tetrominoes.length);
+    currentPiece = tetrominoes[type];
+    currentRotation = 0;
+    currentX = Math.floor(COLS/2) - Math.floor(currentPiece.shape[0].length/2);
+    currentY = 0;
+    if (collision()) gameOver = true;
+}
+
+function rotate(piece) {
+    return piece[0].map((_, i) => piece.map(row => row[i]).reverse());
+}
+
+function getShape() {
+    let shape = currentPiece.shape;
+    for (let i = 0; i < currentRotation; i++) shape = rotate(shape);
+    return shape;
+}
+
+function collision() {
+    const shape = getShape();
+    for (let y = 0; y < shape.length; y++) {
+        for (let x = 0; x < shape[y].length; x++) {
+            if (!shape[y][x]) continue;
+            const bx = currentX + x;
+            const by = currentY + y;
+            if (bx < 0 || bx >= COLS || by >= ROWS) return true;
+            if (by < 0) continue;
+            if (board[by][bx] !== 0) return true;
+        }
+    }
+    return false;
+}
+
+function merge() {
+    const shape = getShape();
+    for (let y = 0; y < shape.length; y++) {
+        for (let x = 0; x < shape[y].length; x++) {
+            if (shape[y][x]) {
+                const by = currentY + y;
+                if (by >= 0) board[by][currentX + x] = currentPiece.color;
+            }
+        }
+    }
+}
+
+function clearLines() {
+    let lines = 0;
+    for (let y = ROWS-1; y >= 0; y--) {
+        if (board[y].every(cell => cell !== 0)) {
+            board.splice(y, 1);
+            board.unshift(Array(COLS).fill(0));
+            lines++;
+            y++;
+        }
+    }
+    if (lines > 0) {
+        const points = [0, 100, 300, 500, 800];
+        score += points[lines] * level;
+        linesCleared += lines;
+        level = Math.floor(linesCleared / 10) + 1;
+        dropInterval = Math.max(100, 800 - (level-1)*70);
+
+        scoreEl.textContent = score;
+        levelEl.textContent = level;
+        linesEl.textContent = linesCleared;
+    }
+}
+
+function drop() {
+    currentY++;
+    if (collision()) {
+        currentY--;
+        merge();
+        clearLines();
+        newPiece();
+    }
+    lastDrop = Date.now();
+}
+
+function hardDrop() {
+    while (!collision()) { currentY++; score += 2; }
+    currentY--;
+    score += 2;
+    merge();
+    clearLines();
+    newPiece();
+    scoreEl.textContent = score;
+}
+
+function move(dir) {
+    currentX += dir;
+    if (collision()) currentX -= dir;
+}
+
+function rotatePiece() {
+    const prev = currentRotation;
+    currentRotation = (currentRotation + 1) % 4;
+    if (collision()) currentRotation = prev;
+}
+
+// ==================== РЕНДЕР ====================
+function draw() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Поле
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            if (board[y][x]) {
+                ctx.fillStyle = board[y][x];
+                ctx.fillRect(x*BLOCK_SIZE, y*BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                ctx.strokeStyle = '#111';
+                ctx.strokeRect(x*BLOCK_SIZE, y*BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+            }
+        }
+    }
+
+    // Текущая фигура
+    if (currentPiece) {
+        const shape = getShape();
+        ctx.fillStyle = currentPiece.color;
+        for (let y = 0; y < shape.length; y++) {
+            for (let x = 0; x < shape[y].length; x++) {
+                if (!shape[y][x]) continue;
+                const px = (currentX + x) * BLOCK_SIZE;
+                const py = (currentY + y) * BLOCK_SIZE;
+                if (py >= 0) {
+                    ctx.fillRect(px, py, BLOCK_SIZE, BLOCK_SIZE);
+                    ctx.strokeStyle = '#000';
+                    ctx.strokeRect(px, py, BLOCK_SIZE, BLOCK_SIZE);
+                }
+            }
+        }
+    }
+
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#f00';
+        ctx.font = 'bold 36px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2 - 20);
+    }
+}
+
+// ==================== УПРАВЛЕНИЕ ====================
+let moveLeftInterval, moveRightInterval;
+
+// Клавиатура (ПК)
+document.addEventListener('keydown', e => {
+    if (gameOver) return;
+    switch(e.key) {
+        case 'ArrowLeft':  move(-1); break;
+        case 'ArrowRight': move(1); break;
+        case 'ArrowDown':  drop(); score += 1; scoreEl.textContent = score; break;
+        case 'ArrowUp':
+        case 'x':
+        case 'X': rotatePiece(); break;
+        case ' ': hardDrop(); break;
+        case 'p':
+        case 'P': paused = !paused; break;
+    }
+});
+
+// Сенсорные кнопки
+function setupTouchControls() {
+    const leftBtn  = document.getElementById('left');
+    const rightBtn = document.getElementById('right');
+    const downBtn  = document.getElementById('down');
+    const rotateBtn = document.getElementById('rotate');
+    const dropBtn   = document.getElementById('harddrop');
+
+    // Левый
+    leftBtn.addEventListener('touchstart', e => { e.preventDefault(); move(-1); });
+    leftBtn.addEventListener('mousedown', () => move(-1));
+
+    // Правый
+    rightBtn.addEventListener('touchstart', e => { e.preventDefault(); move(1); });
+    rightBtn.addEventListener('mousedown', () => move(1));
+
+    // Вниз
+    downBtn.addEventListener('touchstart', e => { e.preventDefault(); drop(); score += 1; scoreEl.textContent = score; });
+    downBtn.addEventListener('mousedown', () => { drop(); score += 1; scoreEl.textContent = score; });
+
+    // Поворот
+    rotateBtn.addEventListener('touchstart', e => { e.preventDefault(); rotatePiece(); });
+    rotateBtn.addEventListener('mousedown', rotatePiece);
+
+    // Hard Drop
+    dropBtn.addEventListener('touchstart', e => { e.preventDefault(); hardDrop(); });
+    dropBtn.addEventListener('mousedown', hardDrop);
+}
+
+setupTouchControls();
+
+// ==================== ИГРОВОЙ ЦИКЛ ====================
+function gameLoop() {
+    if (!gameOver && !paused) {
+        if (Date.now() - lastDrop > dropInterval) drop();
+    }
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// Старт
+newPiece();
+gameLoop();
+</script>
+</body>
+  </html>
