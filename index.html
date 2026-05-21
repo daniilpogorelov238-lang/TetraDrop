@@ -4,14 +4,33 @@
 <meta charset="UTF-8">
 <title>TetraDrop</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0a1f">
+
+<!-- PWA -->
+<link rel="manifest" href="data:application/manifest+json,{
+  %22name%22:%22TetraDrop%22,
+  %22short_name%22:%22TetraDrop%22,
+  %22start_url%22:%22.%22,
+  %22display%22:%22standalone%22,
+  %22background_color%22:%22%230a0a1f%22,
+  %22theme_color%22:%22%2300ffff%22,
+  %22icons%22:[{
+    %22src%22:%22https://via.placeholder.com/192x192/0a0a1f/00ffff?text=TD%22,
+    %22sizes%22:%22192x192%22,
+    %22type%22:%22image/png%22
+  }]
+}">
+
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
     body {
         margin: 0;
         padding: 0;
         height: 100vh;
-        background: #0a0a1f;
-        font-family: 'Courier New', monospace;
-        color: #0ff;
+        background: linear-gradient(180deg, #0a0a1f, #1a0033);
+        color: #00ffff;
+        font-family: 'Press Start 2P', system-ui;
         overflow: hidden;
         touch-action: none;
     }
@@ -20,50 +39,83 @@
         flex-direction: column;
         align-items: center;
         height: 100%;
+        padding: 10px 0;
     }
-    h1 { margin: 8px 0 5px 0; text-shadow: 0 0 10px #0ff; }
+    h1 {
+        font-size: 28px;
+        margin: 8px 0 10px;
+        text-shadow: 0 0 20px #00ffff,
+                     0 0 40px #ff00ff;
+        letter-spacing: 4px;
+    }
     #game {
-        border: 4px solid #0ff;
-        box-shadow: 0 0 30px #0ff;
+        border: 6px solid #00ffff;
+        box-shadow: 0 0 40px #00ffff,
+                    inset 0 0 30px rgba(255,0,255,0.3);
+        border-radius: 8px;
         image-rendering: pixelated;
-        touch-action: none;
+        background: #000;
+    }
+    .header {
+        display: flex;
+        justify-content: space-between;
+        width: 340px;
+        margin-bottom: 8px;
     }
     .info {
         display: flex;
-        justify-content: space-around;
-        width: 320px;
-        margin: 8px 0;
-        font-size: 18px;
+        gap: 20px;
+        font-size: 15px;
+        text-shadow: 0 0 8px #ff00ff;
     }
     .touch-controls {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
-        gap: 8px;
-        width: 320px;
-        margin-top: 10px;
+        gap: 10px;
+        width: 340px;
+        margin-top: 12px;
     }
     button {
-        background: rgba(0, 255, 255, 0.15);
-        color: #0ff;
-        border: 2px solid #0ff;
-        font-size: 18px;
-        padding: 15px;
-        border-radius: 8px;
-        touch-action: none;
+        background: rgba(0, 255, 255, 0.1);
+        color: #00ffff;
+        border: 3px solid #00ffff;
+        font-family: 'Press Start 2P';
+        font-size: 16px;
+        padding: 14px;
+        border-radius: 12px;
+        box-shadow: 0 0 15px rgba(0,255,255,0.5);
     }
-    button:active { background: rgba(0, 255, 255, 0.4); transform: scale(0.95); }
-    .rotate-btn { grid-column: 3; grid-row: 1 / span 2; font-size: 24px; }
+    button:active {
+        background: #00ffff;
+        color: #000;
+        transform: scale(0.92);
+    }
+    .rotate-btn { grid-column: 3; grid-row: 1 / span 2; font-size: 26px; }
+
+    .overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(10,10,31,0.95);
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 100;
+        color: #ff00ff;
+    }
 </style>
 </head>
 <body>
 <div class="container">
-    <h1>TETRADROP</h1>
+    <div class="header">
+        <h1>TETRADROP</h1>
+    </div>
     <canvas id="game" width="320" height="640"></canvas>
     
     <div class="info">
-        <div>Счёт: <span id="score">0</span></div>
-        <div>Уровень: <span id="level">1</span></div>
-        <div>Линии: <span id="lines">0</span></div>
+        <div>SCORE <span id="score">0</span></div>
+        <div>LEVEL <span id="level">1</span></div>
+        <div>LINES <span id="lines">0</span></div>
     </div>
 
     <div class="touch-controls">
@@ -75,8 +127,19 @@
     </div>
 </div>
 
+<div id="pauseOverlay" class="overlay">
+    <h2>PAUSED</h2>
+    <button onclick="togglePause()" style="margin-top:30px; padding:15px 40px;">ПРОДОЛЖИТЬ</button>
+</div>
+
+<div id="gameOverOverlay" class="overlay">
+    <h2>GAME OVER</h2>
+    <p style="font-size:18px;margin:20px 0">СЧЁТ: <span id="finalScore">0</span></p>
+    <button onclick="restartGame()" style="padding:15px 40px;">ИГРАТЬ СНОВА</button>
+</div>
+
 <script>
-// ==================== TETRADROP + Drag on Phone ====================
+// ==================== КРАСИВЫЙ TETRADROP ====================
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
@@ -91,26 +154,25 @@ let board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
 let score = 0, linesCleared = 0, level = 1;
 let dropInterval = 800;
 let lastDrop = Date.now();
-let gameOver = false;
+let gameOverFlag = false;
+let paused = false;
+
+const colors = ['#00ffff', '#ffff00', '#ff00ff', '#00ff00', '#ff8800', '#00ffff', '#ff0088'];
 
 const tetrominoes = [
-    { shape: [[1,1,1,1]], color: '#0ff' },
-    { shape: [[1,1],[1,1]], color: '#ff0' },
-    { shape: [[0,1,0],[1,1,1]], color: '#a0f' },
-    { shape: [[1,0,0],[1,1,1]], color: '#0a0' },
-    { shape: [[0,0,1],[1,1,1]], color: '#f80' },
-    { shape: [[0,1,1],[1,1,0]], color: '#0ff' },
-    { shape: [[1,1,0],[0,1,1]], color: '#f0f' }
+    { shape: [[1,1,1,1]], color: colors[0] },
+    { shape: [[1,1],[1,1]], color: colors[1] },
+    { shape: [[0,1,0],[1,1,1]], color: colors[2] },
+    { shape: [[1,0,0],[1,1,1]], color: colors[3] },
+    { shape: [[0,0,1],[1,1,1]], color: colors[4] },
+    { shape: [[0,1,1],[1,1,0]], color: colors[5] },
+    { shape: [[1,1,0],[0,1,1]], color: colors[6] }
 ];
 
-let currentPiece = null;
-let currentX = 0, currentY = 0, currentRotation = 0;
+let currentPiece, currentX, currentY, currentRotation;
 
-// Touch drag variables
-let touchStartX = 0;
-let touchStartY = 0;
-let lastMoveX = 0;
-let isDragging = false;
+// Touch drag
+let touchStartX = 0, touchStartY = 0, isDragging = false;
 
 function newPiece() {
     const type = Math.floor(Math.random() * tetrominoes.length);
@@ -118,7 +180,7 @@ function newPiece() {
     currentRotation = 0;
     currentX = Math.floor(COLS/2) - Math.floor(currentPiece.shape[0].length/2);
     currentY = 0;
-    if (collision()) gameOver = true;
+    if (collision()) endGame();
 }
 
 function rotate(piece) {
@@ -139,8 +201,7 @@ function collision() {
             const bx = currentX + x;
             const by = currentY + y;
             if (bx < 0 || bx >= COLS || by >= ROWS) return true;
-            if (by < 0) continue;
-            if (board[by][bx] !== 0) return true;
+            if (by >= 0 && board[by][bx]) return true;
         }
     }
     return false;
@@ -151,8 +212,9 @@ function merge() {
     for (let y = 0; y < shape.length; y++) {
         for (let x = 0; x < shape[y].length; x++) {
             if (shape[y][x]) {
-                const by = currentY + y;
-                if (by >= 0) board[by][currentX + x] = currentPiece.color;
+                if (currentY + y >= 0) {
+                    board[currentY + y][currentX + x] = currentPiece.color;
+                }
             }
         }
     }
@@ -173,7 +235,7 @@ function clearLines() {
         score += points[lines] * level;
         linesCleared += lines;
         level = Math.floor(linesCleared / 10) + 1;
-        dropInterval = Math.max(100, 800 - (level-1)*70);
+        dropInterval = Math.max(80, 820 - level * 65);
 
         scoreEl.textContent = score;
         levelEl.textContent = level;
@@ -193,7 +255,10 @@ function drop() {
 }
 
 function hardDrop() {
-    while (!collision()) { currentY++; score += 2; }
+    while (!collision()) {
+        currentY++;
+        score += 2;
+    }
     currentY--;
     score += 2;
     merge();
@@ -215,95 +280,100 @@ function rotatePiece() {
 
 // ==================== TOUCH DRAG ====================
 canvas.addEventListener('touchstart', e => {
-    if (gameOver) return;
-    const touch = e.touches[0];
-    touchStartX = touch.clientX;
-    touchStartY = touch.clientY;
-    lastMoveX = currentX;
+    if (gameOverFlag || paused) return;
+    const t = e.touches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
     isDragging = true;
 });
 
 canvas.addEventListener('touchmove', e => {
-    if (!isDragging || !currentPiece) return;
+    if (!isDragging) return;
     e.preventDefault();
-    
-    const touch = e.touches[0];
-    const deltaX = Math.floor((touch.clientX - touchStartX) / BLOCK_SIZE);
-    const deltaY = Math.floor((touch.clientY - touchStartY) / BLOCK_SIZE);
+    const t = e.touches[0];
+    const deltaX = Math.floor((t.clientX - touchStartX) / (BLOCK_SIZE * 1.2));
+    const deltaY = Math.floor((t.clientY - touchStartY) / (BLOCK_SIZE * 0.8));
 
-    // Горизонтальное движение
-    if (deltaX !== lastMoveX - currentX) {
-        const targetX = currentX + (deltaX - (lastMoveX - currentX));
-        while (currentX < targetX) { move(1); }
-        while (currentX > targetX) { move(-1); }
-        lastMoveX = currentX;
+    if (deltaX !== 0) {
+        move(Math.sign(deltaX));
+        touchStartX = t.clientX;
     }
-
-    // Движение вниз
     if (deltaY > 0) {
-        for (let i = 0; i < deltaY; i++) {
-            drop();
-            score += 1;
-        }
+        drop();
+        score += 1;
         scoreEl.textContent = score;
-        touchStartY = touch.clientY; // обновляем для продолжения
+        touchStartY = t.clientY;
     }
 });
 
-canvas.addEventListener('touchend', () => {
-    isDragging = false;
-});
+canvas.addEventListener('touchend', () => isDragging = false);
 
 // ==================== РЕНДЕР ====================
 function draw() {
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = '#0a001a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Grid glow
+    ctx.strokeStyle = 'rgba(0,255,255,0.08)';
+    for (let x = 0; x <= COLS; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x*BLOCK_SIZE, 0);
+        ctx.lineTo(x*BLOCK_SIZE, canvas.height);
+        ctx.stroke();
+    }
+
+    // Board
     for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
             if (board[y][x]) {
                 ctx.fillStyle = board[y][x];
                 ctx.fillRect(x*BLOCK_SIZE, y*BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-                ctx.strokeStyle = '#111';
-                ctx.strokeRect(x*BLOCK_SIZE, y*BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                ctx.fillRect(x*BLOCK_SIZE+4, y*BLOCK_SIZE+4, 8, 8);
             }
         }
     }
 
+    // Current piece with glow
     if (currentPiece) {
         const shape = getShape();
+        ctx.shadowColor = currentPiece.color;
+        ctx.shadowBlur = 20;
         ctx.fillStyle = currentPiece.color;
         for (let y = 0; y < shape.length; y++) {
             for (let x = 0; x < shape[y].length; x++) {
-                if (!shape[y][x]) continue;
-                const px = (currentX + x) * BLOCK_SIZE;
-                const py = (currentY + y) * BLOCK_SIZE;
-                if (py >= 0) {
-                    ctx.fillRect(px, py, BLOCK_SIZE, BLOCK_SIZE);
-                    ctx.strokeStyle = '#000';
-                    ctx.strokeRect(px, py, BLOCK_SIZE, BLOCK_SIZE);
+                if (shape[y][x]) {
+                    const px = (currentX + x) * BLOCK_SIZE;
+                    const py = (currentY + y) * BLOCK_SIZE;
+                    if (py >= 0) {
+                        ctx.fillRect(px, py, BLOCK_SIZE, BLOCK_SIZE);
+                        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                        ctx.fillRect(px+5, py+5, 10, 10);
+                        ctx.fillStyle = currentPiece.color;
+                    }
                 }
             }
         }
-    }
-
-    if (gameOver) {
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#f00';
-        ctx.font = 'bold 36px Courier New';
-        ctx.textAlign = 'center';
-        ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2 - 20);
+        ctx.shadowBlur = 0;
     }
 }
 
-// ==================== Кнопки + Клавиатура ====================
+function endGame() {
+    gameOverFlag = true;
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('gameOverOverlay').style.display = 'flex';
+}
+
+// ==================== УПРАВЛЕНИЕ ====================
 document.addEventListener('keydown', e => {
-    if (gameOver) return;
+    if (gameOverFlag) return;
+    if (e.key === 'p' || e.key === 'P') { togglePause(); return; }
+    if (paused) return;
+
     switch(e.key) {
-        case 'ArrowLeft':  move(-1); break;
+        case 'ArrowLeft': move(-1); break;
         case 'ArrowRight': move(1); break;
-        case 'ArrowDown':  drop(); score += 1; scoreEl.textContent = score; break;
+        case 'ArrowDown': drop(); score += 1; scoreEl.textContent = score; break;
         case 'ArrowUp':
         case 'x':
         case 'X': rotatePiece(); break;
@@ -311,26 +381,37 @@ document.addEventListener('keydown', e => {
     }
 });
 
-function setupButtons() {
-    document.getElementById('left').addEventListener('touchstart', e => { e.preventDefault(); move(-1); });
-    document.getElementById('right').addEventListener('touchstart', e => { e.preventDefault(); move(1); });
-    document.getElementById('down').addEventListener('touchstart', e => { e.preventDefault(); drop(); score += 1; scoreEl.textContent = score; });
-    document.getElementById('rotate').addEventListener('touchstart', e => { e.preventDefault(); rotatePiece(); });
-    document.getElementById('harddrop').addEventListener('touchstart', e => { e.preventDefault(); hardDrop(); });
-
-    // тоже для мыши
-    document.getElementById('left').addEventListener('mousedown', () => move(-1));
-    document.getElementById('right').addEventListener('mousedown', () => move(1));
-    document.getElementById('down').addEventListener('mousedown', () => { drop(); score += 1; scoreEl.textContent = score; });
-    document.getElementById('rotate').addEventListener('mousedown', rotatePiece);
-    document.getElementById('harddrop').addEventListener('mousedown', hardDrop);
+function togglePause() {
+    paused = !paused;
+    document.getElementById('pauseOverlay').style.display = paused ? 'flex' : 'none';
 }
 
-setupButtons();
+function restartGame() {
+    board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+    score = 0; linesCleared = 0; level = 1; dropInterval = 800;
+    scoreEl.textContent = '0';
+    levelEl.textContent = '1';
+    linesEl.textContent = '0';
+    document.getElementById('gameOverOverlay').style.display = 'none';
+    gameOverFlag = false;
+    newPiece();
+}
 
-// ==================== ИГРОВОЙ ЦИКЛ ====================
+// Кнопки
+document.getElementById('left').addEventListener('touchstart', e=>{e.preventDefault();move(-1);});
+document.getElementById('right').addEventListener('touchstart', e=>{e.preventDefault();move(1);});
+document.getElementById('down').addEventListener('touchstart', e=>{e.preventDefault();drop();score+=1;scoreEl.textContent=score;});
+document.getElementById('rotate').addEventListener('touchstart', e=>{e.preventDefault();rotatePiece();});
+document.getElementById('harddrop').addEventListener('touchstart', e=>{e.preventDefault();hardDrop();});
+
+// Mouse support
+document.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('mousedown', () => btn.click());
+});
+
+// ==================== ЦИКЛ ====================
 function gameLoop() {
-    if (!gameOver) {
+    if (!gameOverFlag && !paused) {
         if (Date.now() - lastDrop > dropInterval) drop();
     }
     draw();
