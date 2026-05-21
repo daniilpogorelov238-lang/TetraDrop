@@ -35,7 +35,12 @@
         padding: 8px 0;
         font-size: 20px;
     }
-    .social a { color: #888; margin-left: 14px; text-decoration: none; }
+    .social a { 
+        color: #00ccff; 
+        margin-left: 14px; 
+        text-decoration: none; 
+        font-size: 18px;
+    }
 
     .main-area {
         display: flex;
@@ -93,7 +98,13 @@
     }
     .rotate-btn { grid-column: 3; grid-row: 1 / span 2; font-size: 26px; }
 
-    .hint { font-size: 11px; opacity: 0.6; text-align: center; margin-top: 12px; line-height: 1.4; }
+    .hint { 
+        font-size: 11px; 
+        opacity: 0.6; 
+        text-align: center; 
+        margin-top: 12px; 
+        line-height: 1.4; 
+    }
 
     .overlay {
         position: fixed;
@@ -113,9 +124,7 @@
     <header>
         <div>TETRADROP</div>
         <div class="social">
-            <a href="https://t.me/" target="_blank">TG</a>
-            <a href="https://vk.com/" target="_blank">VK</a>
-            <a href="#" target="_blank">YT</a>
+            <a href="https://t.me/daniil_pogorelov" target="_blank">@daniil_pogorelov</a>
         </div>
     </header>
 
@@ -137,7 +146,7 @@
     </div>
 
     <div class="hint">
-        ПК: ←→↓ ↑/X • Пробел — сброс<br>
+        ПК: ← → ↓ ↑/X • Пробел — сброс<br>
         Телефон: тяни пальцем влево/вправо/вниз
     </div>
 
@@ -163,7 +172,7 @@
 </div>
 
 <script>
-// ==================== УЛУЧШЕННЫЙ TETRADROP ====================
+// ==================== TETRADROP — Финальная версия ====================
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const nextCanvas = document.getElementById('nextCanvas');
@@ -174,7 +183,8 @@ const COLS = 10;
 const ROWS = 20;
 
 let board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
-let score = 0, linesCleared = 0, level = 1, highScore = localStorage.getItem('tetradrop_hs') || 0;
+let score = 0, linesCleared = 0, level = 1;
+let highScore = localStorage.getItem('tetradrop_hs') || 0;
 let dropInterval = 800;
 let lastDrop = Date.now();
 let gameOverFlag = false;
@@ -194,9 +204,6 @@ const tetrominoes = [
 
 let currentPiece, currentX, currentY, currentRotation = 0;
 let nextPiece = null;
-
-// Touch
-let touchStartX = 0, lastTouchX = 0, touchStartY = 0, isDragging = false;
 
 function randomPiece() {
     return tetrominoes[Math.floor(Math.random() * tetrominoes.length)];
@@ -229,13 +236,13 @@ function drawNext() {
     }
 }
 
-// Остальные функции (rotate, getShape, collision, merge, clearLines, drop, hardDrop, move, rotatePiece) — такие же как раньше
 function rotate(piece) { return piece[0].map((_, i) => piece.map(row => row[i]).reverse()); }
 function getShape() {
     let shape = currentPiece.shape;
     for (let i = 0; i < currentRotation; i++) shape = rotate(shape);
     return shape;
 }
+
 function collision() {
     const shape = getShape();
     for (let y = 0; y < shape.length; y++) {
@@ -249,7 +256,8 @@ function collision() {
     }
     return false;
 }
-function merge() { /* ... */ 
+
+function merge() {
     const shape = getShape();
     for (let y = 0; y < shape.length; y++) {
         for (let x = 0; x < shape[y].length; x++) {
@@ -259,6 +267,7 @@ function merge() { /* ... */
         }
     }
 }
+
 function clearLines() {
     let lines = 0;
     for (let y = ROWS-1; y >= 0; y--) {
@@ -275,9 +284,9 @@ function clearLines() {
         level = Math.floor(linesCleared / 10) + 1;
         dropInterval = Math.max(60, 820 - level * 65);
 
-        scoreEl.textContent = score;
-        levelEl.textContent = level;
-        linesEl.textContent = linesCleared;
+        document.getElementById('score').textContent = score;
+        document.getElementById('level').textContent = level;
+        document.getElementById('lines').textContent = linesCleared;
 
         if (score > highScore) {
             highScore = score;
@@ -286,34 +295,49 @@ function clearLines() {
         }
     }
 }
-function drop() { /* ... */ currentY++; if (collision()) { currentY--; merge(); clearLines(); newPiece(); } lastDrop = Date.now(); }
+
+function drop() {
+    currentY++;
+    if (collision()) {
+        currentY--;
+        merge();
+        clearLines();
+        newPiece();
+    }
+    lastDrop = Date.now();
+}
+
 function hardDrop() {
     while (!collision()) { currentY++; score += 2; }
-    currentY--; score += 2;
-    merge(); clearLines(); newPiece();
-    scoreEl.textContent = score;
+    currentY--;
+    score += 2;
+    merge();
+    clearLines();
+    newPiece();
+    document.getElementById('score').textContent = score;
 }
-function move(dir) { currentX += dir; if (collision()) currentX -= dir; }
+
+function move(dir) {
+    currentX += dir;
+    if (collision()) currentX -= dir;
+}
+
 function rotatePiece() {
     const prev = currentRotation;
     currentRotation = (currentRotation + 1) % 4;
     if (collision()) currentRotation = prev;
 }
 
-// ==================== GHOST PIECE ====================
 function drawGhost() {
     let ghostY = currentY;
     while (!collisionAt(ghostY + 1)) ghostY++;
-    
     ctx.globalAlpha = 0.25;
     ctx.fillStyle = currentPiece.color;
     const shape = getShape();
     for (let y = 0; y < shape.length; y++) {
         for (let x = 0; x < shape[y].length; x++) {
             if (shape[y][x]) {
-                const px = (currentX + x) * BLOCK_SIZE;
-                const py = (ghostY + y) * BLOCK_SIZE;
-                ctx.fillRect(px, py, BLOCK_SIZE, BLOCK_SIZE);
+                ctx.fillRect((currentX + x) * BLOCK_SIZE, (ghostY + y) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
             }
         }
     }
@@ -334,22 +358,18 @@ function collisionAt(testY) {
     return false;
 }
 
-// ==================== РЕНДЕР ====================
-const scoreEl = document.getElementById('score');
-const levelEl = document.getElementById('level');
-const linesEl = document.getElementById('lines');
-
 function draw() {
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Сетка
     ctx.strokeStyle = '#222';
     for (let x = 0; x <= COLS; x++) {
-        ctx.beginPath(); ctx.moveTo(x*BLOCK_SIZE, 0); ctx.lineTo(x*BLOCK_SIZE, canvas.height); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x * BLOCK_SIZE, 0);
+        ctx.lineTo(x * BLOCK_SIZE, canvas.height);
+        ctx.stroke();
     }
 
-    // Board
     for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
             if (board[y][x]) {
@@ -375,7 +395,9 @@ function draw() {
     }
 }
 
-// Touch drag (улучшенный)
+// Touch управление
+let touchStartX = 0, lastTouchX = 0, touchStartY = 0, isDragging = false;
+
 canvas.addEventListener('touchstart', e => {
     if (gameOverFlag || paused) return;
     const t = e.touches[0];
@@ -398,15 +420,56 @@ canvas.addEventListener('touchmove', e => {
     if (deltaY > 0) {
         drop();
         score += 1;
-        scoreEl.textContent = score;
+        document.getElementById('score').textContent = score;
         touchStartY = t.clientY;
     }
 });
 
 canvas.addEventListener('touchend', () => isDragging = false);
 
-// Кнопки, клавиатура, pause, game over — как раньше
-// ... (я сократил для экономии места, но они полностью рабочие)
+// Клавиатура
+document.addEventListener('keydown', e => {
+    if (gameOverFlag) return;
+    if (e.key.toLowerCase() === 'p') { togglePause(); return; }
+    if (paused) return;
+
+    switch(e.key) {
+        case 'ArrowLeft': move(-1); break;
+        case 'ArrowRight': move(1); break;
+        case 'ArrowDown': drop(); score += 1; document.getElementById('score').textContent = score; break;
+        case 'ArrowUp': case 'x': case 'X': rotatePiece(); break;
+        case ' ': hardDrop(); break;
+    }
+});
+
+// Кнопки
+document.getElementById('left').addEventListener('touchstart', e => {e.preventDefault(); move(-1);});
+document.getElementById('right').addEventListener('touchstart', e => {e.preventDefault(); move(1);});
+document.getElementById('down').addEventListener('touchstart', e => {e.preventDefault(); drop(); score += 1; document.getElementById('score').textContent = score;});
+document.getElementById('rotate').addEventListener('touchstart', e => {e.preventDefault(); rotatePiece();});
+document.getElementById('harddrop').addEventListener('touchstart', e => {e.preventDefault(); hardDrop();});
+
+function togglePause() {
+    paused = !paused;
+    document.getElementById('pauseOverlay').style.display = paused ? 'flex' : 'none';
+}
+
+function endGame() {
+    gameOverFlag = true;
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('gameOverOverlay').style.display = 'flex';
+}
+
+function restartGame() {
+    board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+    score = linesCleared = 0; level = 1; dropInterval = 800;
+    document.getElementById('score').textContent = '0';
+    document.getElementById('level').textContent = '1';
+    document.getElementById('lines').textContent = '0';
+    document.getElementById('gameOverOverlay').style.display = 'none';
+    gameOverFlag = false;
+    newPiece();
+}
 
 function gameLoop() {
     if (!gameOverFlag && !paused) {
