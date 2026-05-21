@@ -21,10 +21,7 @@
         align-items: center;
         height: 100%;
     }
-    h1 {
-        margin: 8px 0 5px 0;
-        text-shadow: 0 0 10px #0ff;
-    }
+    h1 { margin: 8px 0 5px 0; text-shadow: 0 0 10px #0ff; }
     #game {
         border: 4px solid #0ff;
         box-shadow: 0 0 30px #0ff;
@@ -38,13 +35,6 @@
         margin: 8px 0;
         font-size: 18px;
     }
-    .controls-info {
-        font-size: 13px;
-        opacity: 0.7;
-        margin-top: 5px;
-    }
-
-    /* === Кнопки управления для телефона === */
     .touch-controls {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
@@ -60,13 +50,9 @@
         padding: 15px;
         border-radius: 8px;
         touch-action: none;
-        user-select: none;
     }
-    button:active {
-        background: rgba(0, 255, 255, 0.4);
-        transform: scale(0.95);
-    }
-    .rotate-btn { grid-column: 3; grid-row: 1 / span 2; font-size: 22px; }
+    button:active { background: rgba(0, 255, 255, 0.4); transform: scale(0.95); }
+    .rotate-btn { grid-column: 3; grid-row: 1 / span 2; font-size: 24px; }
 </style>
 </head>
 <body>
@@ -80,22 +66,17 @@
         <div>Линии: <span id="lines">0</span></div>
     </div>
 
-    <!-- Кнопки для телефона -->
     <div class="touch-controls">
         <button id="left">←</button>
         <button id="down">↓</button>
         <button id="right">→</button>
         <button id="rotate" class="rotate-btn">⟳</button>
-        <button id="harddrop" style="grid-column: 1 / span 2;">DROP</button>
-    </div>
-
-    <div class="controls-info">
-        На ПК: ←→↓↑ / X — поворот, Пробел — сброс
+        <button id="harddrop" style="grid-column: 1 / span 2;">HARD DROP</button>
     </div>
 </div>
 
 <script>
-// ==================== TETRADROP (Мобильная + ПК) ====================
+// ==================== TETRADROP + Drag on Phone ====================
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
@@ -111,22 +92,26 @@ let score = 0, linesCleared = 0, level = 1;
 let dropInterval = 800;
 let lastDrop = Date.now();
 let gameOver = false;
-let paused = false;
 
 const tetrominoes = [
-    { shape: [[1,1,1,1]], color: '#0ff' },      // I
-    { shape: [[1,1],[1,1]], color: '#ff0' },    // O
-    { shape: [[0,1,0],[1,1,1]], color: '#a0f' },// T
-    { shape: [[1,0,0],[1,1,1]], color: '#0a0' },// L
-    { shape: [[0,0,1],[1,1,1]], color: '#f80' },// J
-    { shape: [[0,1,1],[1,1,0]], color: '#0ff' },// S
-    { shape: [[1,1,0],[0,1,1]], color: '#f0f' } // Z
+    { shape: [[1,1,1,1]], color: '#0ff' },
+    { shape: [[1,1],[1,1]], color: '#ff0' },
+    { shape: [[0,1,0],[1,1,1]], color: '#a0f' },
+    { shape: [[1,0,0],[1,1,1]], color: '#0a0' },
+    { shape: [[0,0,1],[1,1,1]], color: '#f80' },
+    { shape: [[0,1,1],[1,1,0]], color: '#0ff' },
+    { shape: [[1,1,0],[0,1,1]], color: '#f0f' }
 ];
 
 let currentPiece = null;
 let currentX = 0, currentY = 0, currentRotation = 0;
 
-// Создание новой фигуры
+// Touch drag variables
+let touchStartX = 0;
+let touchStartY = 0;
+let lastMoveX = 0;
+let isDragging = false;
+
 function newPiece() {
     const type = Math.floor(Math.random() * tetrominoes.length);
     currentPiece = tetrominoes[type];
@@ -228,12 +213,52 @@ function rotatePiece() {
     if (collision()) currentRotation = prev;
 }
 
+// ==================== TOUCH DRAG ====================
+canvas.addEventListener('touchstart', e => {
+    if (gameOver) return;
+    const touch = e.touches[0];
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    lastMoveX = currentX;
+    isDragging = true;
+});
+
+canvas.addEventListener('touchmove', e => {
+    if (!isDragging || !currentPiece) return;
+    e.preventDefault();
+    
+    const touch = e.touches[0];
+    const deltaX = Math.floor((touch.clientX - touchStartX) / BLOCK_SIZE);
+    const deltaY = Math.floor((touch.clientY - touchStartY) / BLOCK_SIZE);
+
+    // Горизонтальное движение
+    if (deltaX !== lastMoveX - currentX) {
+        const targetX = currentX + (deltaX - (lastMoveX - currentX));
+        while (currentX < targetX) { move(1); }
+        while (currentX > targetX) { move(-1); }
+        lastMoveX = currentX;
+    }
+
+    // Движение вниз
+    if (deltaY > 0) {
+        for (let i = 0; i < deltaY; i++) {
+            drop();
+            score += 1;
+        }
+        scoreEl.textContent = score;
+        touchStartY = touch.clientY; // обновляем для продолжения
+    }
+});
+
+canvas.addEventListener('touchend', () => {
+    isDragging = false;
+});
+
 // ==================== РЕНДЕР ====================
 function draw() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Поле
     for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
             if (board[y][x]) {
@@ -245,7 +270,6 @@ function draw() {
         }
     }
 
-    // Текущая фигура
     if (currentPiece) {
         const shape = getShape();
         ctx.fillStyle = currentPiece.color;
@@ -273,10 +297,7 @@ function draw() {
     }
 }
 
-// ==================== УПРАВЛЕНИЕ ====================
-let moveLeftInterval, moveRightInterval;
-
-// Клавиатура (ПК)
+// ==================== Кнопки + Клавиатура ====================
 document.addEventListener('keydown', e => {
     if (gameOver) return;
     switch(e.key) {
@@ -287,54 +308,37 @@ document.addEventListener('keydown', e => {
         case 'x':
         case 'X': rotatePiece(); break;
         case ' ': hardDrop(); break;
-        case 'p':
-        case 'P': paused = !paused; break;
     }
 });
 
-// Сенсорные кнопки
-function setupTouchControls() {
-    const leftBtn  = document.getElementById('left');
-    const rightBtn = document.getElementById('right');
-    const downBtn  = document.getElementById('down');
-    const rotateBtn = document.getElementById('rotate');
-    const dropBtn   = document.getElementById('harddrop');
+function setupButtons() {
+    document.getElementById('left').addEventListener('touchstart', e => { e.preventDefault(); move(-1); });
+    document.getElementById('right').addEventListener('touchstart', e => { e.preventDefault(); move(1); });
+    document.getElementById('down').addEventListener('touchstart', e => { e.preventDefault(); drop(); score += 1; scoreEl.textContent = score; });
+    document.getElementById('rotate').addEventListener('touchstart', e => { e.preventDefault(); rotatePiece(); });
+    document.getElementById('harddrop').addEventListener('touchstart', e => { e.preventDefault(); hardDrop(); });
 
-    // Левый
-    leftBtn.addEventListener('touchstart', e => { e.preventDefault(); move(-1); });
-    leftBtn.addEventListener('mousedown', () => move(-1));
-
-    // Правый
-    rightBtn.addEventListener('touchstart', e => { e.preventDefault(); move(1); });
-    rightBtn.addEventListener('mousedown', () => move(1));
-
-    // Вниз
-    downBtn.addEventListener('touchstart', e => { e.preventDefault(); drop(); score += 1; scoreEl.textContent = score; });
-    downBtn.addEventListener('mousedown', () => { drop(); score += 1; scoreEl.textContent = score; });
-
-    // Поворот
-    rotateBtn.addEventListener('touchstart', e => { e.preventDefault(); rotatePiece(); });
-    rotateBtn.addEventListener('mousedown', rotatePiece);
-
-    // Hard Drop
-    dropBtn.addEventListener('touchstart', e => { e.preventDefault(); hardDrop(); });
-    dropBtn.addEventListener('mousedown', hardDrop);
+    // тоже для мыши
+    document.getElementById('left').addEventListener('mousedown', () => move(-1));
+    document.getElementById('right').addEventListener('mousedown', () => move(1));
+    document.getElementById('down').addEventListener('mousedown', () => { drop(); score += 1; scoreEl.textContent = score; });
+    document.getElementById('rotate').addEventListener('mousedown', rotatePiece);
+    document.getElementById('harddrop').addEventListener('mousedown', hardDrop);
 }
 
-setupTouchControls();
+setupButtons();
 
 // ==================== ИГРОВОЙ ЦИКЛ ====================
 function gameLoop() {
-    if (!gameOver && !paused) {
+    if (!gameOver) {
         if (Date.now() - lastDrop > dropInterval) drop();
     }
     draw();
     requestAnimationFrame(gameLoop);
 }
 
-// Старт
 newPiece();
 gameLoop();
 </script>
 </body>
-  </html>
+</html>
